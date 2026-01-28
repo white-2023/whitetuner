@@ -53,5 +53,5 @@ def flash_attention(
         x = x.transpose(1, 2).contiguous()
         return x.type(out_dtype)
 
-    raise ValueError(f"Unknown attention mode: {attn_mode}, only 'torch' is supported in hhytuner")
+    raise ValueError(f"Unknown attention mode: {attn_mode}, only 'torch' is supported in whitetuner")
 

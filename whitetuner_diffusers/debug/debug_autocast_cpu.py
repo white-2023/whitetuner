@@ -1,6 +1,6 @@
 import torch
 import sys
-sys.path.insert(0, "D:/ai/hhytuner/hhytuner_diffusers")
+sys.path.insert(0, "D:/ai/whitetuner/whitetuner_diffusers")
 
 def test_autocast_cpu_offload():
     from flux2_modules import load_flux2_transformer_from_diffusers

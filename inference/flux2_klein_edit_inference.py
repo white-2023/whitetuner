@@ -15,8 +15,8 @@ from typing import Dict, Tuple, Optional, List
 from tqdm import tqdm
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-hhytuner_dir = os.path.dirname(script_dir)
-diffusers_dir = os.path.join(hhytuner_dir, "hhytuner_diffusers")
+whitetuner_dir = os.path.dirname(script_dir)
+diffusers_dir = os.path.join(whitetuner_dir, "whitetuner_diffusers")
 if diffusers_dir not in sys.path:
     sys.path.insert(0, diffusers_dir)
 

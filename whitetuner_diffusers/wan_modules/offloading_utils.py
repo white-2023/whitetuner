@@ -129,7 +129,7 @@ class Offloader:
 
         import os
         if not debug:
-            debug = os.getenv("HHYTUNER_OFFLOADER_DEBUG", "0") == "1"
+            debug = os.getenv("WHITETUNER_OFFLOADER_DEBUG", "0") == "1"
 
         self.debug = debug
         self.debug_block_count = 0

@@ -6,7 +6,7 @@ import gc
 import torch
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "hhytuner_diffusers"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "whitetuner_diffusers"))
 
 from diffusers import AutoencoderKLQwenImage, FlowMatchEulerDiscreteScheduler
 from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2Tokenizer

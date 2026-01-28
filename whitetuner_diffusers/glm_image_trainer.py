@@ -40,7 +40,7 @@ from base_trainer import (
 )
 
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'hhytuner_singlefile'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'whitetuner_singlefile'))
 from wan_modules.offloading_utils import (
     ModelOffloader,
     weighs_to_device,

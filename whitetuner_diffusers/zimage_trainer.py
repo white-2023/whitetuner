@@ -28,7 +28,7 @@ from safetensors.torch import save_file, load_file
 try:
     from zimage_modules import load_zimage_transformer
 except ImportError:
-    from hhytuner_diffusers.zimage_modules import load_zimage_transformer
+    from whitetuner_diffusers.zimage_modules import load_zimage_transformer
 
 from base_trainer import (
     BaseTrainer,

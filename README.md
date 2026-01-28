@@ -1,8 +1,8 @@
-# HHY Tuner - 轻量图像/视频模型训练器
+# White Tuner - 轻量图像/视频模型训练器
 
 ## 项目简介
 
-HHY Tuner 是一个基于 Gradio 的图像/视频 AI 模型训练工具，支持多种主流生成模型的微调训练。提供直观的 gradio 界面，支持 LoKr 高效微调和全量训练，内置多种显存优化技术，本项目由老白独立维护（还有claude老师，gpt老师，glm老师，gemini老师，等等....）。
+White Tuner 是一个基于 Gradio 的图像/视频 AI 模型训练工具，支持多种主流生成模型的微调训练。提供直观的 gradio 界面，支持 LoKr 高效微调和全量训练，内置多种显存优化技术，本项目由老白独立维护（还有claude老师，gpt老师，glm老师，gemini老师，等等....）。
 
 **[特色]** 本训练器是首个同时支持 **多卡训练 + Block Swap** 的开源训练器，可在有限显存下训练大模型。
 
@@ -21,8 +21,8 @@ HHY Tuner 是一个基于 Gradio 的图像/视频 AI 模型训练工具，支持
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/yourname/hhytuner.git
-cd hhytuner
+git clone https://github.com/white-2023/whitetuner.git
+cd whitetuner
 ```
 
 ### 2. 安装依赖
@@ -51,7 +51,7 @@ pip install -r req.txt
 ### 3. 启动界面
 
 ```bash
-cd hhytuner_diffusers
+cd whitetuner_diffusers
 python gui.py
 ```
 
@@ -68,8 +68,8 @@ python gui.py
 ## 项目架构
 
 ```
-hhytuner/
-+-- hhytuner_diffusers/          [核心训练模块]
+whitetuner/
++-- whitetuner_diffusers/          [核心训练模块]
 |   +-- gui.py                   主界面入口
 |   +-- gui_common.py            通用工具 (进程管理/TensorBoard)
 |   +-- base_trainer.py          基础训练器抽象类
@@ -116,7 +116,7 @@ hhytuner/
 
 ```
 +==============================================================+
-|          HHY Tuner - 轻量的图像/视频模型训练器               |
+|          White Tuner - 轻量的图像/视频模型训练器               |
 +==============================================================+
 | [FLUX.2 Klein Edit] [FLUX.2 Klein T2I] [WAN I2V] [Qwen T2I]  |
 | [ZImage] [GLM-Image] [TensorBoard]                           |

@@ -15,8 +15,8 @@ from typing import Dict, Tuple, Optional
 from tqdm import tqdm
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-hhytuner_dir = os.path.dirname(script_dir)
-diffusers_dir = os.path.join(hhytuner_dir, "hhytuner_diffusers")
+whitetuner_dir = os.path.dirname(script_dir)
+diffusers_dir = os.path.join(whitetuner_dir, "whitetuner_diffusers")
 if diffusers_dir not in sys.path:
     sys.path.insert(0, diffusers_dir)
 
@@ -28,7 +28,7 @@ from optimum.quanto import freeze, qint8, quantize
 
 # ===== 配置 =====
 base_model_path = r"/root/FLUX.2-klein-base-9B"
-trained_transformer_path = r"/root/hhytuner/hhytuner_diffusers/output/final"  # 留空则只生成基础模型图像
+trained_transformer_path = r"/root/whitetuner/whitetuner_diffusers/output/final"  # 留空则只生成基础模型图像
 
 output_path = os.path.join(script_dir, "flux2_klein.png")
 

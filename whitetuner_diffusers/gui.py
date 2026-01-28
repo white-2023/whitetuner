@@ -37,17 +37,17 @@ def discover_pages():
 
 def create_gradio_interface():
     try:
-        blocks_kwargs = {"title": "HHY Tuner - 图像模型训练器", "theme": gr.themes.Soft()}
+        blocks_kwargs = {"title": "White Tuner - 图像模型训练器", "theme": gr.themes.Soft()}
         with gr.Blocks(**blocks_kwargs) as demo:
             pass
         demo = None
     except (TypeError, AttributeError):
-        blocks_kwargs = {"title": "HHY Tuner - 图像模型训练器"}
+        blocks_kwargs = {"title": "White Tuner - 图像模型训练器"}
     
     with gr.Blocks(**blocks_kwargs) as demo:
         gr.Markdown(
             """
-            # HHY Tuner - 轻量的图像/视频模型训练器
+            # White Tuner - 轻量的图像/视频模型训练器
             
             """
         )
@@ -63,7 +63,7 @@ def create_gradio_interface():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="HHY Tuner - 图像模型训练器 Gradio 界面")
+    parser = argparse.ArgumentParser(description="White Tuner - 图像模型训练器 Gradio 界面")
     parser.add_argument("--listen", type=str, default="0.0.0.0", help="服务器监听地址 (默认: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=7860, help="Gradio 服务器端口 (默认: 7860)")
     parser.add_argument("--tensorboard", type=int, default=6006, help="TensorBoard 端口 (默认: 6006)")

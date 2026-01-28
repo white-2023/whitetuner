@@ -5,7 +5,7 @@
 
 import torch
 import sys
-sys.path.insert(0, "D:/ai/hhytuner/hhytuner_diffusers")
+sys.path.insert(0, "D:/ai/whitetuner/whitetuner_diffusers")
 
 
 def analyze_block_swap_logic(num_blocks: int, blocks_to_swap: int):
