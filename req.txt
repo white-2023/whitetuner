@@ -1,0 +1,14 @@
+torch
+torchaudio
+torchvision
+ftfy
+opencv-python-headless
+einops
+gradio
+accelerate
+bitsandbytes
+git+https://github.com/huggingface/diffusers.git
+git+https://github.com/huggingface/transformers.git
+optimum-quanto
+tensorboard
+matplotlib
