@@ -263,6 +263,14 @@ def run_training_process(cmd, cwd=None, env=None, initial_msg=""):
 tensorboard_process = None
 tensorboard_port = 6006
 tensorboard_job_handle = None
+tensorboard_enabled = True
+
+TENSORBOARD_AVAILABLE = False
+try:
+    import tensorboard
+    TENSORBOARD_AVAILABLE = True
+except ImportError:
+    pass
 
 
 def cleanup_on_exit():
@@ -433,6 +441,15 @@ def _kill_process_tree(process):
 
 def start_tensorboard(port=None, logdir=None, force_restart=False):
     global tensorboard_process, tensorboard_port
+    
+    if not tensorboard_enabled:
+        print("[config] TensorBoard 已禁用 (--no-tensorboard)")
+        return
+    
+    if not TENSORBOARD_AVAILABLE:
+        print("[!] TensorBoard 未安装，跳过启动")
+        print("  如需使用 TensorBoard，请运行: pip install tensorboard")
+        return
     
     if force_restart and tensorboard_process is not None:
         stop_tensorboard()

@@ -36,15 +36,7 @@ def discover_pages():
 
 
 def create_gradio_interface():
-    try:
-        blocks_kwargs = {"title": "White Tuner - 图像模型训练器", "theme": gr.themes.Soft()}
-        with gr.Blocks(**blocks_kwargs) as demo:
-            pass
-        demo = None
-    except (TypeError, AttributeError):
-        blocks_kwargs = {"title": "White Tuner - 图像模型训练器"}
-    
-    with gr.Blocks(**blocks_kwargs) as demo:
+    with gr.Blocks(title="White Tuner - 图像模型训练器") as demo:
         gr.Markdown(
             """
             # White Tuner - 轻量的图像/视频模型训练器
@@ -70,6 +62,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     parser.add_argument("--share", action="store_true", help="创建公共分享链接")
     parser.add_argument("--server", action="store_true", help="服务器模式：禁用文件夹选择按钮和TensorBoard嵌入")
+    parser.add_argument("--no-tensorboard", action="store_true", help="禁用 TensorBoard")
     
     args = parser.parse_args()
     
@@ -84,38 +77,53 @@ if __name__ == "__main__":
             print("[config] 未检测到图形界面环境，自动切换到服务器模式")
             print("  （文件夹选择按钮和 TensorBoard 嵌入已禁用）")
     
-    print("=" * 80)
-    print("启动 TensorBoard...")
-    print("=" * 80)
-    common.start_tensorboard(port=args.tensorboard)
+    if args.no_tensorboard:
+        common.tensorboard_enabled = False
     
-    if common.tensorboard_process is not None:
-        print("\n等待 TensorBoard 初始化...")
-        max_wait = 10
-        for i in range(max_wait):
-            time.sleep(1)
-            if common.check_port_open(common.tensorboard_port):
-                print(f"[ok] TensorBoard 已就绪")
-                break
-            elif i % 3 == 2:
-                print(f"  等待中... ({i+1}/{max_wait}秒)")
-        else:
-            print(f"[!] TensorBoard 可能需要更长时间启动，请稍后访问")
+    if common.tensorboard_enabled and common.TENSORBOARD_AVAILABLE:
+        print("=" * 80)
+        print("启动 TensorBoard...")
+        print("=" * 80)
+        common.start_tensorboard(port=args.tensorboard)
+        
+        if common.tensorboard_process is not None:
+            print("\n等待 TensorBoard 初始化...")
+            max_wait = 10
+            for i in range(max_wait):
+                time.sleep(1)
+                if common.check_port_open(common.tensorboard_port):
+                    print(f"[ok] TensorBoard 已就绪")
+                    break
+                elif i % 3 == 2:
+                    print(f"  等待中... ({i+1}/{max_wait}秒)")
+            else:
+                print(f"[!] TensorBoard 可能需要更长时间启动，请稍后访问")
+    elif not common.tensorboard_enabled:
+        print("[config] TensorBoard 已禁用")
+    elif not common.TENSORBOARD_AVAILABLE:
+        print("[!] TensorBoard 未安装，如需使用请运行: pip install tensorboard")
     
     print("\n" + "=" * 80)
     print("启动 Gradio 界面...")
     print(f"访问地址: http://{args.listen}:{args.port}")
-    print(f"TensorBoard: http://localhost:{common.tensorboard_port}")
+    if common.tensorboard_process is not None:
+        print(f"TensorBoard: http://localhost:{common.tensorboard_port}")
     print("=" * 80)
     demo = create_gradio_interface()
     
+    launch_kwargs = {
+        "server_name": args.listen,
+        "server_port": args.port,
+        "share": args.share,
+        "show_error": True,
+        "inbrowser": not args.no_browser,
+    }
     try:
-        demo.launch(
-            server_name=args.listen,
-            server_port=args.port,
-            share=args.share,
-            show_error=True,
-            inbrowser=not args.no_browser
-        )
+        launch_kwargs["theme"] = gr.themes.Soft()
+    except (TypeError, AttributeError):
+        pass
+    
+    try:
+        demo.launch(**launch_kwargs)
     finally:
         common.stop_tensorboard()
