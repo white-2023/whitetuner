@@ -201,6 +201,27 @@ def get_loss_stats(steps, losses, ylim=None, outlier_count=0, weight_steps=None,
 def create_page():
     with gr.Column() as page:
         def get_tensorboard_info():
+            if not common.tensorboard_enabled:
+                return """
+                ### TensorBoard 实时监控
+                
+                [!] **TensorBoard 已禁用** (--no-tensorboard)
+                
+                如需启用 TensorBoard，请去掉 --no-tensorboard 参数重新启动。
+                """
+            if not common.TENSORBOARD_AVAILABLE:
+                return """
+                ### TensorBoard 实时监控
+                
+                [!] **TensorBoard 未安装**
+                
+                请运行以下命令安装：
+                ```
+                pip install tensorboard
+                ```
+                
+                安装后重新启动即可使用 TensorBoard。
+                """
             if common.is_local_mode:
                 return f"""
                 ### TensorBoard 实时监控
@@ -225,7 +246,9 @@ def create_page():
         
         tensorboard_info = gr.Markdown(value=get_tensorboard_info())
         
-        if common.is_local_mode:
+        tensorboard_available = common.tensorboard_enabled and common.TENSORBOARD_AVAILABLE
+        
+        if common.is_local_mode and tensorboard_available:
             with gr.Row():
                 refresh_btn = gr.Button("刷新 TensorBoard", variant="secondary", size="sm")
             
