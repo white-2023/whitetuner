@@ -48,22 +48,15 @@ class CausalConv3d(nn.Conv3d):
         self.padding = (0, self.padding[1], self.padding[2])
 
     def forward(self, x, cache_x=None):
-        if self._padding > 0:
-            padding_needed = self._padding
-            if cache_x is not None:
-                cache_x = cache_x.to(x.device)
-                padding_needed = max(0, padding_needed - cache_x.shape[2])
-            
-            if padding_needed > 0:
-                padding_shape = list(x.shape)
-                padding_shape[2] = padding_needed
-                padding = torch.zeros(padding_shape, device=x.device, dtype=x.dtype)
-                if cache_x is not None:
-                    x = torch.cat([padding, cache_x, x], dim=2)
-                else:
-                    x = torch.cat([padding, x], dim=2)
-            elif cache_x is not None:
-                x = torch.cat([cache_x, x], dim=2)
+        kernel_t = self.weight.shape[2]
+        t = x.shape[2]
+        
+        pad_needed = max(self._padding, kernel_t - t)
+        if pad_needed > 0:
+            padding_shape = list(x.shape)
+            padding_shape[2] = pad_needed
+            padding = torch.zeros(padding_shape, device=x.device, dtype=x.dtype)
+            x = torch.cat([padding, x], dim=2)
         
         return super().forward(x)
 
@@ -115,18 +108,19 @@ class Resample(nn.Module):
 
     def forward(self, x):
         b, c, t, h, w = x.size()
-        if self.mode == 'upsample3d':
+        
+        if self.mode == 'upsample3d' and t > 1:
             x = self.time_conv(x)
             x = x.reshape(b, 2, c, t, h, w)
             x = torch.stack((x[:, 0, :, :, :, :], x[:, 1, :, :, :, :]), 3)
             x = x.reshape(b, c, t * 2, h, w)
         
-        t = x.shape[2]
+        t_curr = x.shape[2]
         x = rearrange(x, 'b c t h w -> (b t) c h w')
         x = self.resample(x)
-        x = rearrange(x, '(b t) c h w -> b c t h w', t=t)
+        x = rearrange(x, '(b t) c h w -> b c t h w', t=t_curr)
 
-        if self.mode == 'downsample3d':
+        if self.mode == 'downsample3d' and t > 1:
             x = self.time_conv(x)
         return x
 
@@ -282,12 +276,12 @@ class Decoder3d(nn.Module):
 class WanVAE(nn.Module):
     def __init__(
         self,
-        dim=128,
+        dim=96,
         z_dim=16,
         dim_mult=[1, 2, 4, 4],
         num_res_blocks=2,
         attn_scales=[],
-        temperal_downsample=[True, True, False],
+        temperal_downsample=[False, True, True],
         image_channels=3,
         dropout=0.0
     ):
@@ -330,9 +324,25 @@ class AnimaVAE:
         
         print(f"Loading VAE from {vae_path}")
         
-        self.model = WanVAE(dim=128, z_dim=16)
-        
         state_dict = load_file(vae_path)
+        
+        dim = state_dict["decoder.head.0.gamma"].shape[0]
+        z_dim = 16
+        image_channels = state_dict["encoder.conv1.weight"].shape[1]
+        
+        print(f"  - Detected config: dim={dim}, z_dim={z_dim}, image_channels={image_channels}")
+        
+        self.model = WanVAE(
+            dim=dim,
+            z_dim=z_dim,
+            dim_mult=[1, 2, 4, 4],
+            num_res_blocks=2,
+            attn_scales=[],
+            temperal_downsample=[False, True, True],
+            image_channels=image_channels,
+            dropout=0.0
+        )
+        
         missing, unexpected = self.model.load_state_dict(state_dict, strict=False)
         if missing:
             print(f"  - Missing keys: {len(missing)}")
@@ -361,13 +371,14 @@ class AnimaVAE:
         return results
 
     @torch.no_grad()
-    def decode(self, latents: List[torch.Tensor]) -> List[torch.Tensor]:
+    def decode(self, latents: List[torch.Tensor], already_processed: bool = False) -> List[torch.Tensor]:
         results = []
         for lat in latents:
             if lat.dim() == 4:
                 lat = lat.unsqueeze(0)
             lat = lat.to(self.device, self.dtype)
-            lat = self.latent_format.process_out(lat)
+            if not already_processed:
+                lat = self.latent_format.process_out(lat)
             img = self.model.decode(lat)
             img = img.clamp(-1, 1)
             results.append(img.squeeze(0))

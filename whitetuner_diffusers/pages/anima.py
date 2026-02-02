@@ -19,6 +19,8 @@ def start_training(
     checkpoint_every_n_steps,
     checkpoints_total_limit,
     learning_rate,
+    train_text_encoder,
+    te_learning_rate,
     batch_size,
     resolution,
     timestep_type,
@@ -29,6 +31,9 @@ def start_training(
     caption_ext,
     default_caption,
     noise_offset,
+    blocks_to_swap,
+    use_adafactor,
+    use_pinned_memory,
 ):
     if not dit_path:
         yield "[X] 请填写 DiT 模型路径"
@@ -92,6 +97,19 @@ def start_training(
         "--lognorm_alpha", str(float(lognorm_alpha)),
         "--noise_offset", str(float(noise_offset)),
     ]
+    
+    if train_text_encoder:
+        cmd.extend(["--train_text_encoder"])
+        cmd.extend(["--te_learning_rate", str(float(te_learning_rate))])
+    
+    if blocks_to_swap and int(blocks_to_swap) > 0:
+        cmd.extend(["--blocks_to_swap", str(int(blocks_to_swap))])
+    
+    if use_adafactor:
+        cmd.append("--use_adafactor")
+    
+    if use_pinned_memory:
+        cmd.append("--use_pinned_memory")
     
     if qwen_tokenizer_path and qwen_tokenizer_path.strip():
         cmd.extend(["--qwen_tokenizer_path", qwen_tokenizer_path.strip()])
@@ -271,9 +289,28 @@ def create_page():
                     )
                     
                     learning_rate = gr.Number(
-                        label="学习率",
+                        label="学习率 (DiT)",
                         value=1e-5,
-                        info="全量训练建议 1e-5 ~ 5e-5"
+                        info="DiT 全量训练建议 1e-5 ~ 5e-5"
+                    )
+                    
+                    train_text_encoder = gr.Checkbox(
+                        label="训练 Text Encoder",
+                        value=False,
+                        info="同时训练 Qwen3 0.6B Text Encoder (增加约 1-2GB 显存)"
+                    )
+                    
+                    te_learning_rate = gr.Number(
+                        label="Text Encoder 学习率",
+                        value=1e-6,
+                        info="TE 学习率建议比 DiT 低一个数量级",
+                        visible=False
+                    )
+                    
+                    train_text_encoder.change(
+                        fn=lambda x: gr.update(visible=x),
+                        inputs=[train_text_encoder],
+                        outputs=[te_learning_rate]
                     )
                     
                     batch_size = gr.Number(
@@ -351,6 +388,29 @@ def create_page():
                         step=0.01,
                         info="噪声偏移，可以帮助生成更亮/更暗的图像"
                     )
+                    
+                    gr.Markdown("**显存优化设置**")
+                    
+                    blocks_to_swap = gr.Slider(
+                        label="Block Swap 数量",
+                        minimum=0,
+                        maximum=27,
+                        value=0,
+                        step=1,
+                        info="0=禁用，推荐 20 (Anima有28个block)"
+                    )
+                    
+                    use_adafactor = gr.Checkbox(
+                        label="使用 Adafactor 优化器",
+                        value=False,
+                        info="Block Swap 时推荐开启"
+                    )
+                    
+                    use_pinned_memory = gr.Checkbox(
+                        label="使用 Pinned Memory",
+                        value=False,
+                        info="可以加速 CPU-GPU 传输"
+                    )
             
             with gr.Column(scale=1):
                 with gr.Group():
@@ -404,6 +464,8 @@ def create_page():
                         checkpoint_every_n_steps,
                         checkpoints_total_limit,
                         learning_rate,
+                        train_text_encoder,
+                        te_learning_rate,
                         batch_size,
                         resolution,
                         timestep_type,
@@ -414,6 +476,9 @@ def create_page():
                         caption_ext,
                         default_caption,
                         noise_offset,
+                        blocks_to_swap,
+                        use_adafactor,
+                        use_pinned_memory,
                     ],
                     outputs=status_text,
                     show_progress="full"

@@ -872,7 +872,7 @@ class BaseTrainer(ABC):
                         self.optimizer.zero_grad()
                         self.lr_scheduler.step()
                 
-                avg_loss = self.accelerator.gather(loss.repeat(self.config.batch_size)).mean()
+                avg_loss = self.accelerator.gather(loss.detach().repeat(self.config.batch_size)).mean()
                 
                 # 多卡 reduce 检查（只在第一步打印）
                 if current_step == 1:
@@ -959,6 +959,9 @@ class BaseTrainer(ABC):
                         print(f"  ✓ 检查点已保存: checkpoint-{current_step}")
                 
                 global_step += 1
+            
+            gc.collect()
+            torch.cuda.empty_cache()
             
             if global_step >= num_train_steps:
                 break

@@ -91,6 +91,11 @@ class AnimaConfig(BaseTrainerConfig):
         caption_ext: str = ".txt",
         default_caption: str = "",
         noise_offset: float = 0.0,
+        train_text_encoder: bool = False,
+        te_learning_rate: float = 1e-6,
+        blocks_to_swap: int = 0,
+        use_adafactor: bool = False,
+        use_pinned_memory: bool = False,
         cache_dir: str = None,
         use_tensorboard: bool = True,
         tensorboard_dir: str = None,
@@ -139,6 +144,11 @@ class AnimaConfig(BaseTrainerConfig):
         self.noise_offset = noise_offset
         
         self.gradient_checkpointing = gradient_checkpointing
+        self.train_text_encoder = train_text_encoder
+        self.te_learning_rate = te_learning_rate
+        self.blocks_to_swap = blocks_to_swap
+        self.use_adafactor = use_adafactor
+        self.use_pinned_memory = use_pinned_memory
         
         if cache_dir is None:
             self.cache_dir = os.path.join(image_folder, "_anima_cache")
@@ -241,6 +251,7 @@ class AnimaTrainer(BaseTrainer):
         
         self.text_cache = {}
         self.latent_cache = {}
+        self.caption_cache = {}
         
         self.text_encoder = None
         self.tokenizer = None
@@ -367,26 +378,49 @@ class AnimaTrainer(BaseTrainer):
         
         self.flush_memory()
     
-    def _encode_text(self, texts: List[str]) -> torch.Tensor:
+    def _encode_text(self, texts: List[str]) -> Tuple[torch.Tensor, torch.Tensor]:
         inputs = self.tokenizer(
             texts,
             padding=True,
             truncation=True,
             max_length=512,
             return_tensors="pt",
+            device=self.accelerator.device,
         )
-        input_ids = inputs["input_ids"].to(self.accelerator.device)
-        attention_mask = inputs["attention_mask"].to(self.accelerator.device)
+        input_ids = inputs.input_ids
+        attention_mask = inputs.attention_mask
+        t5_ids = inputs.t5_ids
         
         with torch.no_grad():
             hidden_states = self.text_encoder(input_ids, attention_mask)
         
-        return hidden_states
+        return hidden_states, t5_ids
+    
+    def _encode_text_train(self, texts: List[str]) -> Tuple[torch.Tensor, torch.Tensor]:
+        inputs = self.tokenizer(
+            texts,
+            padding=True,
+            truncation=True,
+            max_length=512,
+            return_tensors="pt",
+            device=self.accelerator.device,
+        )
+        input_ids = inputs.input_ids
+        attention_mask = inputs.attention_mask
+        t5_ids = inputs.t5_ids
+        
+        hidden_states = self.text_encoder(input_ids, attention_mask)
+        
+        return hidden_states, t5_ids
     
     def _cache_embeddings(self):
         if self.accelerator.is_main_process:
             print("\nPhase 2: Caching Embeddings")
             print("=" * 60)
+            if self.config.train_text_encoder:
+                print("  - Training Text Encoder: ENABLED (caching latents only)")
+            else:
+                print("  - Training Text Encoder: DISABLED (caching text embeds + latents)")
         
         if self._check_stop():
             return
@@ -399,11 +433,18 @@ class AnimaTrainer(BaseTrainer):
         self.accelerator.wait_for_everyone()
         
         samples_to_encode = []
+        cache_suffix = "_te" if self.config.train_text_encoder else ""
+        
         for idx in range(len(self.dataset)):
-            cache_file = os.path.join(self.config.cache_dir, f"sample_{idx}.pt")
+            cache_file = os.path.join(self.config.cache_dir, f"sample_{idx}{cache_suffix}.pt")
             if os.path.exists(cache_file):
                 cached = torch.load(cache_file, map_location='cpu', weights_only=True)
-                self.text_cache[idx] = cached['text_embeds']
+                if self.config.train_text_encoder:
+                    self.caption_cache[idx] = cached['caption']
+                else:
+                    text_embeds = cached['text_embeds']
+                    t5_ids = cached.get('t5_ids', None)
+                    self.text_cache[idx] = (text_embeds, t5_ids)
                 self.latent_cache[idx] = cached['latents']
             else:
                 samples_to_encode.append(idx)
@@ -412,10 +453,11 @@ class AnimaTrainer(BaseTrainer):
         process_index = self.accelerator.process_index
         
         if self.accelerator.is_main_process:
-            if len(self.text_cache) == 0:
+            cached_count = len(self.latent_cache)
+            if cached_count == 0:
                 print(f"No cache found, creating cache ({len(samples_to_encode)} samples)")
             else:
-                print(f"Loaded {len(self.text_cache)} cached samples, need to encode {len(samples_to_encode)} samples")
+                print(f"Loaded {cached_count} cached samples, need to encode {len(samples_to_encode)} samples")
         
         if len(samples_to_encode) > 0:
             my_samples = []
@@ -433,10 +475,7 @@ class AnimaTrainer(BaseTrainer):
                         break
                     
                     sample = self.dataset[idx]
-                    
                     caption = sample['caption']
-                    text_embeds = self._encode_text([caption])
-                    text_embeds = text_embeds[0].cpu()
                     
                     img = sample['image'].unsqueeze(0)
                     img = img * 2 - 1
@@ -445,16 +484,27 @@ class AnimaTrainer(BaseTrainer):
                     
                     latents = self.vae.encode([img.squeeze(0)])[0].cpu()
                     
-                    cache_data = {
-                        'text_embeds': text_embeds,
-                        'latents': latents,
-                    }
+                    if self.config.train_text_encoder:
+                        cache_data = {
+                            'caption': caption,
+                            'latents': latents,
+                        }
+                        self.caption_cache[idx] = caption
+                    else:
+                        text_embeds, t5_ids = self._encode_text([caption])
+                        text_embeds = text_embeds[0].cpu()
+                        t5_ids = t5_ids[0].cpu()
+                        cache_data = {
+                            'text_embeds': text_embeds,
+                            't5_ids': t5_ids,
+                            'latents': latents,
+                        }
+                        self.text_cache[idx] = (text_embeds, t5_ids)
                     
-                    cache_file = os.path.join(self.config.cache_dir, f"sample_{idx}.pt")
-                    torch.save(cache_data, cache_file)
-                    
-                    self.text_cache[idx] = text_embeds
                     self.latent_cache[idx] = latents
+                    
+                    cache_file = os.path.join(self.config.cache_dir, f"sample_{idx}{cache_suffix}.pt")
+                    torch.save(cache_data, cache_file)
                     
                     if pbar is not None:
                         pbar.update(num_processes)
@@ -468,27 +518,40 @@ class AnimaTrainer(BaseTrainer):
             return
         
         for idx in samples_to_encode:
-            if idx not in self.text_cache:
-                cache_file = os.path.join(self.config.cache_dir, f"sample_{idx}.pt")
+            if idx not in self.latent_cache:
+                cache_file = os.path.join(self.config.cache_dir, f"sample_{idx}{cache_suffix}.pt")
                 if os.path.exists(cache_file):
                     cached = torch.load(cache_file, map_location='cpu', weights_only=True)
-                    self.text_cache[idx] = cached['text_embeds']
+                    if self.config.train_text_encoder:
+                        self.caption_cache[idx] = cached['caption']
+                    else:
+                        text_embeds = cached['text_embeds']
+                        t5_ids = cached.get('t5_ids', None)
+                        self.text_cache[idx] = (text_embeds, t5_ids)
                     self.latent_cache[idx] = cached['latents']
         
         if self.accelerator.is_main_process:
-            print(f"Caching complete, {len(self.text_cache)} samples cached")
+            print(f"Caching complete, {len(self.latent_cache)} samples cached")
         
-        mem_before = torch.cuda.memory_allocated() / 1024**3 if torch.cuda.is_available() else 0
-        del self.text_encoder, self.tokenizer, self.vae
-        self.text_encoder = None
-        self.tokenizer = None
-        self.vae = None
-        torch.cuda.empty_cache()
-        gc.collect()
-        mem_after = torch.cuda.memory_allocated() / 1024**3 if torch.cuda.is_available() else 0
-        freed_memory = mem_before - mem_after
-        if self.accelerator.is_main_process:
-            print(f"Freed {freed_memory:.2f}GB VRAM after unloading encoders")
+        if self.config.train_text_encoder:
+            del self.vae
+            self.vae = None
+            torch.cuda.empty_cache()
+            gc.collect()
+            if self.accelerator.is_main_process:
+                print("Unloaded VAE (keeping Text Encoder for training)")
+        else:
+            mem_before = torch.cuda.memory_allocated() / 1024**3 if torch.cuda.is_available() else 0
+            del self.text_encoder, self.tokenizer, self.vae
+            self.text_encoder = None
+            self.tokenizer = None
+            self.vae = None
+            torch.cuda.empty_cache()
+            gc.collect()
+            mem_after = torch.cuda.memory_allocated() / 1024**3 if torch.cuda.is_available() else 0
+            freed_memory = mem_before - mem_after
+            if self.accelerator.is_main_process:
+                print(f"Freed {freed_memory:.2f}GB VRAM after unloading encoders")
     
     def _load_dit(self):
         if self.accelerator.is_main_process:
@@ -498,16 +561,33 @@ class AnimaTrainer(BaseTrainer):
         if self._check_stop():
             return
         
+        blocks_to_swap = self.config.blocks_to_swap
+        loading_device = "cpu" if blocks_to_swap > 0 else self.accelerator.device
+        
         if self.accelerator.is_main_process:
             print(f">>> Loading Anima DiT from {self.config.dit_path}...")
+            if blocks_to_swap > 0:
+                print(f">>> Block Swap: {blocks_to_swap} blocks")
+            if self.config.use_adafactor:
+                print(f">>> Optimizer: Adafactor (fused)")
         
         from anima_modules.model import load_anima_model
         
         self.dit = load_anima_model(
             dit_path=self.config.dit_path,
-            device=self.accelerator.device,
+            device=loading_device,
             dtype=self.config.dtype,
         )
+        
+        if blocks_to_swap > 0:
+            if self.accelerator.is_main_process:
+                print(f">>> Enabling block swap: {blocks_to_swap} blocks")
+            self.dit.enable_block_swap(
+                blocks_to_swap,
+                self.accelerator.device,
+                supports_backward=True,
+                use_pinned_memory=self.config.use_pinned_memory,
+            )
         
         self.dit.requires_grad_(True)
         self.dit.train()
@@ -536,14 +616,100 @@ class AnimaTrainer(BaseTrainer):
             print("\nPhase 4: Preparing for distributed training")
             print("=" * 60)
         
-        self.dit = self.accelerator.prepare(self.dit)
-        self.transformer = self.dit
+        blocks_to_swap = self.config.blocks_to_swap
         
-        if self.accelerator.is_main_process:
-            print(f"DiT prepared for DDP (num_processes: {self.accelerator.num_processes})")
+        if blocks_to_swap > 0:
+            self.dit.move_to_device_except_swap_blocks(self.accelerator.device)
+            self.dit.prepare_block_swap_before_forward()
+            if self.accelerator.is_main_process:
+                print(f"DiT blocks prepared for block swap (num_processes: {self.accelerator.num_processes})")
+            
+            if self.config.train_text_encoder:
+                self.text_encoder = self.accelerator.prepare(self.text_encoder)
+                if self.accelerator.is_main_process:
+                    print(f"Text Encoder prepared for DDP")
+        else:
+            if self.config.train_text_encoder:
+                self.dit, self.text_encoder = self.accelerator.prepare(self.dit, self.text_encoder)
+                if self.accelerator.is_main_process:
+                    print(f"DiT + Text Encoder prepared for DDP (num_processes: {self.accelerator.num_processes})")
+            else:
+                self.dit = self.accelerator.prepare(self.dit)
+                if self.accelerator.is_main_process:
+                    print(f"DiT prepared for DDP (num_processes: {self.accelerator.num_processes})")
+        
+        self.transformer = self.dit
     
     def get_trainable_params(self) -> List[torch.nn.Parameter]:
-        return [p for p in self.dit.parameters() if p.requires_grad]
+        params = [p for p in self.dit.parameters() if p.requires_grad]
+        if self.config.train_text_encoder and self.text_encoder is not None:
+            params.extend([p for p in self.text_encoder.parameters() if p.requires_grad])
+        return params
+    
+    def create_optimizer(self, trainable_params: List[torch.nn.Parameter]):
+        if self.config.use_adafactor:
+            from transformers import Adafactor
+            from adafactor_fused import patch_adafactor_fused
+            
+            dit_model = self.accelerator.unwrap_model(self.dit) if hasattr(self.dit, 'module') else self.dit
+            dit_params = [p for p in dit_model.parameters() if p.requires_grad]
+            
+            param_groups = [{"params": dit_params, "lr": self.config.learning_rate}]
+            
+            if self.config.train_text_encoder and self.text_encoder is not None:
+                te_model = self.accelerator.unwrap_model(self.text_encoder) if hasattr(self.text_encoder, 'module') else self.text_encoder
+                te_params = [p for p in te_model.parameters() if p.requires_grad]
+                param_groups.append({"params": te_params, "lr": self.config.te_learning_rate})
+                
+                if self.accelerator.is_main_process:
+                    print(f"  - DiT params: {sum(p.numel() for p in dit_params):,}, lr={self.config.learning_rate}")
+                    print(f"  - TE params: {sum(p.numel() for p in te_params):,}, lr={self.config.te_learning_rate}")
+            
+            optimizer = Adafactor(
+                param_groups,
+                lr=None,
+                relative_step=False,
+                scale_parameter=False,
+                warmup_init=False,
+            )
+            patch_adafactor_fused(optimizer)
+            
+            if self.accelerator.is_main_process:
+                print(f"  - Optimizer: Adafactor (fused, block swap compatible)")
+            
+            return optimizer
+        else:
+            import bitsandbytes as bnb
+            
+            if self.config.train_text_encoder and self.text_encoder is not None:
+                dit_model = self.accelerator.unwrap_model(self.dit) if hasattr(self.dit, 'module') else self.dit
+                te_model = self.accelerator.unwrap_model(self.text_encoder) if hasattr(self.text_encoder, 'module') else self.text_encoder
+                dit_params = [p for p in dit_model.parameters() if p.requires_grad]
+                te_params = [p for p in te_model.parameters() if p.requires_grad]
+                
+                param_groups = [
+                    {"params": dit_params, "lr": self.config.learning_rate},
+                    {"params": te_params, "lr": self.config.te_learning_rate},
+                ]
+                
+                if self.accelerator.is_main_process:
+                    print(f"  - DiT params: {sum(p.numel() for p in dit_params):,}, lr={self.config.learning_rate}")
+                    print(f"  - TE params: {sum(p.numel() for p in te_params):,}, lr={self.config.te_learning_rate}")
+                
+                return bnb.optim.AdamW8bit(
+                    param_groups,
+                    betas=(0.9, 0.999),
+                    weight_decay=1e-2,
+                    eps=1e-6,
+                )
+            else:
+                return bnb.optim.AdamW8bit(
+                    trainable_params,
+                    lr=self.config.learning_rate,
+                    betas=(0.9, 0.999),
+                    weight_decay=1e-2,
+                    eps=1e-6,
+                )
     
     def train_step(self, batch: Dict[str, Any]) -> torch.Tensor:
         device = self.accelerator.device
@@ -554,26 +720,51 @@ class AnimaTrainer(BaseTrainer):
             self.last_image_name = batch['image_names'][0] if batch['image_names'] else None
         
         latents_list = []
-        text_embeds_list = []
         
         for idx in sample_indices:
             latents_list.append(self.latent_cache[idx])
-            text_embeds_list.append(self.text_cache[idx])
         
         latents = torch.stack(latents_list, dim=0).to(device, self.config.dtype)
         
-        max_text_len = max(e.shape[0] for e in text_embeds_list)
-        padded_embeds = []
-        for embeds in text_embeds_list:
-            pad_len = max_text_len - embeds.shape[0]
-            if pad_len > 0:
-                embeds = F.pad(embeds, (0, 0, 0, pad_len))
-            padded_embeds.append(embeds)
+        if self.config.train_text_encoder:
+            captions = [self.caption_cache[idx] for idx in sample_indices]
+            text_embeds, t5_ids = self._encode_text_train(captions)
+        else:
+            text_embeds_list = []
+            t5_ids_list = []
+            for idx in sample_indices:
+                cached = self.text_cache[idx]
+                if isinstance(cached, tuple):
+                    text_embeds_list.append(cached[0])
+                    t5_ids_list.append(cached[1] if cached[1] is not None else torch.tensor([1]))
+                else:
+                    text_embeds_list.append(cached)
+                    t5_ids_list.append(torch.tensor([1]))
+            
+            max_text_len = max(e.shape[0] for e in text_embeds_list)
+            max_t5_len = max(t.shape[0] for t in t5_ids_list)
+            padded_embeds = []
+            padded_t5_ids = []
+            
+            for embeds, t5 in zip(text_embeds_list, t5_ids_list):
+                pad_len = max_text_len - embeds.shape[0]
+                if pad_len > 0:
+                    embeds = F.pad(embeds, (0, 0, 0, pad_len))
+                padded_embeds.append(embeds)
+                
+                t5_pad_len = max_t5_len - t5.shape[0]
+                if t5_pad_len > 0:
+                    t5 = F.pad(t5, (0, t5_pad_len))
+                padded_t5_ids.append(t5)
+            
+            text_embeds = torch.stack(padded_embeds, dim=0).to(device, self.config.dtype)
+            t5_ids = torch.stack(padded_t5_ids, dim=0).to(device)
         
-        text_embeds = torch.stack(padded_embeds, dim=0).to(device, self.config.dtype)
+        dit_model = self.accelerator.unwrap_model(self.dit) if hasattr(self.dit, 'module') else self.dit
+        context = dit_model.preprocess_text_embeds(text_embeds, t5_ids)
         
-        if text_embeds.shape[1] < 512:
-            text_embeds = F.pad(text_embeds, (0, 0, 0, 512 - text_embeds.shape[1]))
+        if context.shape[1] < 512:
+            context = F.pad(context, (0, 0, 0, 512 - context.shape[1]))
         
         timesteps, timestep_weights = sample_timesteps(
             batch_size,
@@ -600,7 +791,7 @@ class AnimaTrainer(BaseTrainer):
             model_pred = self.dit(
                 noisy_latents,
                 timesteps=timesteps,
-                context=text_embeds,
+                context=context,
             )
         
         target = noise - latents
@@ -610,6 +801,8 @@ class AnimaTrainer(BaseTrainer):
         
         weighted_loss = per_sample_loss * timestep_weights
         loss = weighted_loss.mean()
+        
+        del latents, noise, noisy_latents, model_pred, target, per_sample_loss, weighted_loss, context
         
         return loss
     
@@ -623,6 +816,12 @@ class AnimaTrainer(BaseTrainer):
         
         state_dict_cpu = {k: v.cpu() for k, v in state_dict.items()}
         save_file(state_dict_cpu, os.path.join(checkpoint_dir, "dit_weights.safetensors"))
+        
+        if self.config.train_text_encoder and self.text_encoder is not None:
+            unwrapped_te = self.accelerator.unwrap_model(self.text_encoder)
+            te_state_dict = unwrapped_te.state_dict()
+            te_state_dict_cpu = {k: v.cpu() for k, v in te_state_dict.items()}
+            save_file(te_state_dict_cpu, os.path.join(checkpoint_dir, "text_encoder_weights.safetensors"))
         
         self.save_accelerate_state(checkpoint_dir, step)
         self._save_config(checkpoint_dir)
@@ -639,9 +838,11 @@ class AnimaTrainer(BaseTrainer):
             "output_dir": self.config.output_dir,
             "num_train_steps": self.config.num_train_steps,
             "learning_rate": self.config.learning_rate,
+            "te_learning_rate": self.config.te_learning_rate,
             "resolution": self.config.resolution,
             "timestep_type": self.config.timestep_type,
             "shift_scale": self.config.shift_scale,
+            "train_text_encoder": self.config.train_text_encoder,
             "training_method": "full",
         }
         config_path = os.path.join(checkpoint_dir, "training_config.json")
@@ -755,6 +956,10 @@ class AnimaTrainer(BaseTrainer):
     def pre_training_hook(self):
         if self.accelerator.is_main_process:
             print(f"\nAnima Full Training")
+            if self.config.train_text_encoder:
+                print(f"  - Training: DiT + Text Encoder")
+            else:
+                print(f"  - Training: DiT only")
             print(f"Timestep sampling: {self.config.timestep_type}")
             if self.config.timestep_type == "sigmoid":
                 print(f"  - sigmoid_scale: {self.config.sigmoid_scale}")
@@ -798,6 +1003,13 @@ def main():
     parser.add_argument("--default_caption", type=str, default="", help="Default caption")
     parser.add_argument("--noise_offset", type=float, default=0.0, help="Noise offset")
     
+    parser.add_argument("--train_text_encoder", action="store_true", default=False, help="Train text encoder")
+    parser.add_argument("--te_learning_rate", type=float, default=1e-6, help="Text encoder learning rate")
+    
+    parser.add_argument("--blocks_to_swap", type=int, default=0, help="Number of blocks to swap (0=disabled)")
+    parser.add_argument("--use_adafactor", action="store_true", default=False, help="Use Adafactor optimizer (recommended with block swap)")
+    parser.add_argument("--use_pinned_memory", action="store_true", default=False, help="Use pinned memory for block swap")
+    
     parser.add_argument("--gradient_checkpointing", action="store_true", default=True, help="Enable gradient checkpointing")
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1, help="Gradient accumulation")
     parser.add_argument("--mixed_precision", type=str, default="bf16", choices=["no", "fp16", "bf16"], help="Mixed precision")
@@ -828,6 +1040,11 @@ def main():
         caption_ext=args.caption_ext,
         default_caption=args.default_caption,
         noise_offset=args.noise_offset,
+        train_text_encoder=args.train_text_encoder,
+        te_learning_rate=args.te_learning_rate,
+        blocks_to_swap=args.blocks_to_swap,
+        use_adafactor=args.use_adafactor,
+        use_pinned_memory=args.use_pinned_memory,
         gradient_checkpointing=args.gradient_checkpointing,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision=args.mixed_precision,
