@@ -11,7 +11,6 @@ def start_training(
     dit_path,
     vae_path,
     text_encoder_path,
-    qwen_tokenizer_path,
     image_folder,
     output_dir,
     resume_from_checkpoint,
@@ -111,9 +110,6 @@ def start_training(
     if use_pinned_memory:
         cmd.append("--use_pinned_memory")
     
-    if qwen_tokenizer_path and qwen_tokenizer_path.strip():
-        cmd.extend(["--qwen_tokenizer_path", qwen_tokenizer_path.strip()])
-    
     if use_caption:
         cmd.append("--use_caption")
         cmd.extend(["--caption_ext", caption_ext])
@@ -136,15 +132,12 @@ def start_training(
     if resume_from_checkpoint and resume_from_checkpoint.strip():
         resume_info = f"\n- 从检查点恢复: {resume_from_checkpoint}"
     
-    tokenizer_info = qwen_tokenizer_path.strip() if qwen_tokenizer_path and qwen_tokenizer_path.strip() else "Qwen/Qwen3-0.6B (自动下载)"
-    
     initial_msg = f"""使用 accelerate launch 启动 Anima T2I 训练!
 
 配置信息:
 - DiT 模型: {dit_path}
 - VAE 模型: {vae_path}
 - 文本编码器: {text_encoder_path}
-- Tokenizer: {tokenizer_info}
 - 图片文件夹: {image_folder}
 - 输出目录: {output_dir}
 - 训练步数: {num_train_steps}
@@ -218,16 +211,6 @@ def create_page():
                     )
                     te_btn = gr.Button("\U0001F4C1", scale=0, min_width=40, visible=common.is_local_mode)
                 
-                with gr.Row():
-                    qwen_tokenizer_path = gr.Textbox(
-                        label="Qwen Tokenizer 路径 (可选)",
-                        placeholder="留空自动从网络加载 Qwen/Qwen3-0.6B",
-                        container=False,
-                        max_lines=1,
-                        scale=4
-                    )
-                    tokenizer_btn = gr.Button("\U0001F4C1", scale=0, min_width=40, visible=common.is_local_mode)
-                
                 gr.Markdown("**数据路径**")
                 
                 with gr.Row():
@@ -264,7 +247,6 @@ def create_page():
                     dit_btn.click(fn=common.select_file, inputs=dit_path, outputs=dit_path)
                     vae_btn.click(fn=common.select_file, inputs=vae_path, outputs=vae_path)
                     te_btn.click(fn=common.select_file, inputs=text_encoder_path, outputs=text_encoder_path)
-                    tokenizer_btn.click(fn=common.select_folder, inputs=qwen_tokenizer_path, outputs=qwen_tokenizer_path)
                     image_btn.click(fn=common.select_folder, inputs=image_folder, outputs=image_folder)
                     output_btn.click(fn=common.select_folder, inputs=output_dir, outputs=output_dir)
                     resume_btn.click(fn=common.select_folder, inputs=resume_from_checkpoint, outputs=resume_from_checkpoint)
@@ -456,7 +438,6 @@ def create_page():
                         dit_path,
                         vae_path,
                         text_encoder_path,
-                        qwen_tokenizer_path,
                         image_folder,
                         output_dir,
                         resume_from_checkpoint,

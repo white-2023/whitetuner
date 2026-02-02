@@ -341,26 +341,17 @@ def load_qwen3_text_encoder(
 
 
 class AnimaTokenizer:
+    QWEN_HF_MODEL_ID = "Qwen/Qwen2.5-0.5B"
+    T5_HF_MODEL_ID = "google-t5/t5-base"
+    
     def __init__(self, qwen_tokenizer_path: str = None, t5_tokenizer_path: str = None):
         from transformers import Qwen2Tokenizer, T5TokenizerFast
         
         if qwen_tokenizer_path is None:
-            qwen_tokenizer_path = os.path.join(
-                os.path.dirname(os.path.realpath(__file__)),
-                "..", "..", "..", "..",
-                "ComfyUI_windows_portable", "ComfyUIaliyun", "comfy", "text_encoders", "qwen25_tokenizer"
-            )
-            if not os.path.exists(qwen_tokenizer_path):
-                qwen_tokenizer_path = r"D:\ComfyUI_windows_portable\ComfyUIaliyun\comfy\text_encoders\qwen25_tokenizer"
+            qwen_tokenizer_path = self.QWEN_HF_MODEL_ID
         
         if t5_tokenizer_path is None:
-            t5_tokenizer_path = os.path.join(
-                os.path.dirname(os.path.realpath(__file__)),
-                "..", "..", "..", "..",
-                "ComfyUI_windows_portable", "ComfyUIaliyun", "comfy", "text_encoders", "t5_tokenizer"
-            )
-            if not os.path.exists(t5_tokenizer_path):
-                t5_tokenizer_path = r"D:\ComfyUI_windows_portable\ComfyUIaliyun\comfy\text_encoders\t5_tokenizer"
+            t5_tokenizer_path = self.T5_HF_MODEL_ID
         
         print(f"Loading Qwen2Tokenizer from: {qwen_tokenizer_path}")
         self.qwen_tokenizer = Qwen2Tokenizer.from_pretrained(qwen_tokenizer_path)

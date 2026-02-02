@@ -664,7 +664,7 @@ class LLMAdapter(nn.Module):
                 source_attention_mask = source_attention_mask.unsqueeze(1).unsqueeze(1)
 
         x = self.in_proj(self.embed(target_input_ids))
-        context = source_hidden_states
+        context = source_hidden_states.to(x.dtype)
         position_ids = torch.arange(x.shape[1], device=x.device).unsqueeze(0)
         position_ids_context = torch.arange(context.shape[1], device=x.device).unsqueeze(0)
         position_embeddings = self.rotary_emb(x, position_ids)
@@ -702,6 +702,9 @@ class Anima(nn.Module):
     ) -> None:
         super().__init__()
         self.dtype = dtype
+        self.blocks_to_swap = None
+        self.offloader = None
+        self.gradient_checkpointing = False
         self.max_img_h = max_img_h
         self.max_img_w = max_img_w
         self.max_frames = max_frames
@@ -778,6 +781,55 @@ class Anima(nn.Module):
         else:
             return text_embeds
 
+    def enable_block_swap(self, blocks_to_swap: int, device: torch.device, supports_backward: bool, use_pinned_memory: bool = False):
+        from wan_modules.offloading_utils import ModelOffloader
+        
+        self.blocks_to_swap = blocks_to_swap
+        num_blocks = len(self.blocks)
+
+        assert (
+            self.blocks_to_swap <= num_blocks - 1
+        ), f"Cannot swap more than {num_blocks - 1} blocks. Requested {self.blocks_to_swap} blocks to swap."
+
+        self.offloader = ModelOffloader(
+            "anima_attn_block", self.blocks, num_blocks, self.blocks_to_swap, supports_backward, device, use_pinned_memory
+        )
+        print(
+            f"Anima: Block swap enabled. Swapping {self.blocks_to_swap} blocks out of {num_blocks} blocks. Supports backward: {supports_backward}"
+        )
+
+    def switch_block_swap_for_inference(self):
+        if self.blocks_to_swap:
+            self.offloader.set_forward_only(True)
+            self.prepare_block_swap_before_forward()
+            print(f"Anima: Block swap set to forward only")
+
+    def switch_block_swap_for_training(self):
+        if self.blocks_to_swap:
+            self.offloader.set_forward_only(False)
+            self.prepare_block_swap_before_forward()
+            print(f"Anima: Block swap set to forward and backward")
+
+    def move_to_device_except_swap_blocks(self, device: torch.device):
+        if self.blocks_to_swap:
+            save_blocks = self.blocks
+            self.blocks = None
+
+        self.to(device)
+
+        if self.blocks_to_swap:
+            self.blocks = save_blocks
+
+    def prepare_block_swap_before_forward(self):
+        if self.blocks_to_swap is None or self.blocks_to_swap == 0:
+            return
+        self.offloader.prepare_block_devices_before_forward(self.blocks)
+
+    def cleanup_offloader(self):
+        if self.offloader is not None:
+            self.offloader.shutdown()
+            self.offloader = None
+
     def enable_gradient_checkpointing(self):
         self.gradient_checkpointing = True
         for block in self.blocks:
@@ -841,7 +893,11 @@ class Anima(nn.Module):
         if do_debug:
             print(f"  rope_emb after unsqueeze: shape={rope_emb.shape}")
 
+        input_device = x_B_T_H_W_D.device
         for i, block in enumerate(self.blocks):
+            if self.blocks_to_swap:
+                self.offloader.wait_for_block(i)
+            
             x_B_T_H_W_D = block(
                 x_B_T_H_W_D,
                 t_embedding,
@@ -849,8 +905,15 @@ class Anima(nn.Module):
                 rope_emb_L_1_1_D=rope_emb,
                 adaln_lora_B_T_3D=adaln_lora,
             )
+            
+            if self.blocks_to_swap:
+                self.offloader.submit_move_blocks_forward(self.blocks, i)
+            
             if do_debug and i == 0:
                 print(f"  after block 0: mean={x_B_T_H_W_D.float().mean().item():.4f}, std={x_B_T_H_W_D.float().std().item():.4f}")
+
+        if self.blocks_to_swap and x_B_T_H_W_D.device != input_device:
+            x_B_T_H_W_D = x_B_T_H_W_D.to(input_device)
 
         x_B_T_H_W_O = self.final_layer(x_B_T_H_W_D, t_embedding, adaln_lora_B_T_3D=adaln_lora)
 
