@@ -385,13 +385,33 @@ def create_page():
                     use_adafactor = gr.Checkbox(
                         label="使用 Adafactor 优化器",
                         value=False,
-                        info="Block Swap 时推荐开启"
+                        info="Block Swap 时必须开启",
+                        visible=False
                     )
                     
                     use_pinned_memory = gr.Checkbox(
                         label="使用 Pinned Memory",
                         value=False,
-                        info="可以加速 CPU-GPU 传输"
+                        info="可以加速 CPU-GPU 传输",
+                        visible=False
+                    )
+                    
+                    def on_block_swap_change(swap_count):
+                        if swap_count > 0:
+                            return (
+                                gr.update(visible=True, value=True),
+                                gr.update(visible=True, value=True),
+                            )
+                        else:
+                            return (
+                                gr.update(visible=False, value=False),
+                                gr.update(visible=False, value=False),
+                            )
+                    
+                    blocks_to_swap.change(
+                        fn=on_block_swap_change,
+                        inputs=[blocks_to_swap],
+                        outputs=[use_adafactor, use_pinned_memory]
                     )
             
             with gr.Column(scale=1):

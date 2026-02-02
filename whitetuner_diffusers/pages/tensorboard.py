@@ -3,11 +3,47 @@ import re
 import io
 import base64
 import math
+import platform
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 
 import gui_common as common
+
+def _setup_chinese_font():
+    system = platform.system()
+    font_candidates = []
+    if system == "Windows":
+        font_candidates = [
+            "Microsoft YaHei",
+            "SimHei",
+            "SimSun",
+            "KaiTi",
+            "FangSong",
+        ]
+    else:
+        font_candidates = [
+            "WenQuanYi Micro Hei",
+            "Noto Sans CJK SC",
+            "Noto Sans CJK",
+            "Droid Sans Fallback",
+            "Source Han Sans SC",
+            "Source Han Sans CN",
+            "AR PL UMing CN",
+        ]
+    
+    available_fonts = {f.name for f in font_manager.fontManager.ttflist}
+    
+    for font_name in font_candidates:
+        if font_name in available_fonts:
+            plt.rcParams['font.sans-serif'] = [font_name, 'DejaVu Sans']
+            plt.rcParams['axes.unicode_minus'] = False
+            return
+    
+    plt.rcParams['axes.unicode_minus'] = False
+
+_setup_chinese_font()
 
 PAGE_TITLE = "TensorBoard"
 
