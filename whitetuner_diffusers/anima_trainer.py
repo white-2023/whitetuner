@@ -784,13 +784,13 @@ class AnimaTrainer(BaseTrainer):
             )
         
         sigmas = timesteps.float() / 1000.0
-        sigmas = sigmas.view(-1, 1, 1, 1, 1)
-        noisy_latents = (1 - sigmas) * latents + sigmas * noise
+        sigmas_broadcast = sigmas.view(-1, 1, 1, 1, 1)
+        noisy_latents = (1 - sigmas_broadcast) * latents + sigmas_broadcast * noise
         
         with self.accelerator.autocast():
             model_pred = self.dit(
                 noisy_latents,
-                timesteps=timesteps,
+                timesteps=sigmas,
                 context=context,
             )
         

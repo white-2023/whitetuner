@@ -1,5 +1,14 @@
 # White Tuner - 轻量图像/视频模型训练器
 
+## 更新日志
+
+**2026-02-02** - 新增 Anima T2I 全量训练支持
+- 支持 circlestone-labs/Anima 文生图模型的全量微调
+- 基于 NVIDIA Cosmos-Predict2-2B 架构
+- 使用 Qwen3 0.6B 文本编码器，支持同时训练 DiT + Text Encoder
+- 支持 Block Swap 显存优化
+- 推理脚本支持原模型与训练后模型的对比生成
+
 ## 项目简介
 
 White Tuner 是一个基于 Gradio 的图像/视频 AI 模型训练工具，支持多种主流生成模型的微调训练。提供直观的 gradio 界面，支持 LoKr 高效微调和全量训练，内置多种显存优化技术，本项目由老白独立维护（还有claude老师，gpt老师，glm老师，gemini老师，等等....）。
@@ -10,6 +19,7 @@ White Tuner 是一个基于 Gradio 的图像/视频 AI 模型训练工具，支�
 
 | 模型 | 训练类型 | 说明 |
 |------|----------|------|
+| Anima | T2I | 动漫风格文生图 (Cosmos-Predict2 架构) |
 | FLUX.2 Klein | T2I / Edit | 文生图 / 多图编辑 |
 | WAN I2V | I2V | 图生视频 (支持 2.1/2.2) |
 | Qwen Image | T2I / Edit | 文生图 / 图像编辑 |
@@ -76,6 +86,7 @@ whitetuner/
 |   +-- lokr.py                  LoKr 微调模块
 |   |
 |   +-- pages/                   [界面页面]
+|   |   +-- anima.py             Anima T2I 训练
 |   |   +-- flux2_klein.py       FLUX.2 Klein Edit 训练
 |   |   +-- flux2_klein_t2i.py   FLUX.2 Klein T2I 训练
 |   |   +-- wan.py               WAN I2V 训练
@@ -86,6 +97,7 @@ whitetuner/
 |   |   +-- tensorboard.py       TensorBoard 监控页面
 |   |
 |   +-- [训练器脚本]
+|   |   +-- anima_trainer.py
 |   |   +-- flux2_klein_trainer.py
 |   |   +-- flux2_klein_t2i_trainer.py
 |   |   +-- wan_trainer.py
@@ -95,12 +107,14 @@ whitetuner/
 |   |   +-- glm_image_trainer.py
 |   |
 |   +-- [模型模块]
+|       +-- anima_modules/       Anima 模型实现 (Cosmos-Predict2)
 |       +-- flux2_modules/       FLUX.2 模型实现
 |       +-- wan_modules/         WAN 模型实现
 |       +-- qwen_modules/        Qwen 模型实现
 |       +-- zimage_modules/      ZImage 模型实现
 |
 +-- inference/                   [推理脚本]
+|   +-- anima_inference.py
 |   +-- flux2_klein_inference.py
 |   +-- qwen_image_inference.py
 |   +-- zimage_inference.py
@@ -118,8 +132,8 @@ whitetuner/
 +==============================================================+
 |          White Tuner - 轻量的图像/视频模型训练器               |
 +==============================================================+
-| [FLUX.2 Klein Edit] [FLUX.2 Klein T2I] [WAN I2V] [Qwen T2I]  |
-| [ZImage] [GLM-Image] [TensorBoard]                           |
+| [Anima T2I] [FLUX.2 Klein Edit] [FLUX.2 Klein T2I] [WAN I2V] |
+| [Qwen T2I] [ZImage] [GLM-Image] [TensorBoard]                |
 +-------------------------------+------------------------------+
 |                               |                              |
 |   [参数配置区域]              |   [训练状态区域]             |

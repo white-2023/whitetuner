@@ -11,7 +11,7 @@ from PIL import Image
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "whitetuner_diffusers"))
 
 base_model_path = r"F:\models\circlestone-labs-Anima"
-trained_checkpoint_path = r""
+trained_checkpoint_path = r"C:\Users\hhy\Downloads\moyuking(国风仙子）\out\checkpoints\checkpoint-1000"
 
 prompt = "masterpiece, best quality, score_7, safe. An anime girl wearing a black tank-top and denim shorts is standing outdoors. She's holding a rectangular sign out in front of her that reads \"ANIMA\". She's looking at the viewer with a smile. The background features some trees and blue sky with clouds."
 negative_prompt = ""
@@ -141,14 +141,18 @@ vae_path = os.path.join(base_model_path, "split_files", "vae", "qwen_image_vae.s
 trained_te_path = None
 trained_dit_path = None
 if trained_checkpoint_path:
-    trained_te_path = os.path.join(trained_checkpoint_path, "text_encoder.safetensors")
-    trained_dit_path = os.path.join(trained_checkpoint_path, "dit.safetensors")
+    trained_te_path = os.path.join(trained_checkpoint_path, "text_encoder_weights.safetensors")
+    trained_dit_path = os.path.join(trained_checkpoint_path, "dit_weights.safetensors")
     if not os.path.exists(trained_te_path):
         trained_te_path = None
-        print(f"[INFO] No trained text encoder found")
+        print(f"[INFO] No trained text encoder found at {trained_checkpoint_path}")
+    else:
+        print(f"[INFO] Found trained text encoder: {trained_te_path}")
     if not os.path.exists(trained_dit_path):
         trained_dit_path = None
-        print(f"[INFO] No trained DiT found")
+        print(f"[INFO] No trained DiT found at {trained_checkpoint_path}")
+    else:
+        print(f"[INFO] Found trained DiT: {trained_dit_path}")
 
 latent_c = 16
 latent_t = 1
