@@ -42,9 +42,6 @@ def start_training(
         yield "[X] 请填写文本编码器路径"
         return
     
-    if not qwen_tokenizer_path:
-        yield "[X] 请填写 Qwen Tokenizer 路径"
-        return
     
     if not image_folder:
         yield "[X] 请填写图片文件夹路径"
@@ -62,9 +59,6 @@ def start_training(
         yield f"[X] 文本编码器路径不存在: {text_encoder_path}"
         return
     
-    if not os.path.exists(qwen_tokenizer_path):
-        yield f"[X] Qwen Tokenizer 路径不存在: {qwen_tokenizer_path}"
-        return
     
     if not os.path.exists(image_folder):
         yield f"[X] 图片文件夹不存在: {image_folder}"
@@ -84,7 +78,6 @@ def start_training(
         "--dit_path", dit_path,
         "--vae_path", vae_path,
         "--text_encoder_path", text_encoder_path,
-        "--qwen_tokenizer_path", qwen_tokenizer_path,
         "--image_folder", image_folder,
         "--output_dir", output_dir,
         "--num_train_steps", str(int(num_train_steps)),
@@ -99,6 +92,9 @@ def start_training(
         "--lognorm_alpha", str(float(lognorm_alpha)),
         "--noise_offset", str(float(noise_offset)),
     ]
+    
+    if qwen_tokenizer_path and qwen_tokenizer_path.strip():
+        cmd.extend(["--qwen_tokenizer_path", qwen_tokenizer_path.strip()])
     
     if use_caption:
         cmd.append("--use_caption")
@@ -122,12 +118,15 @@ def start_training(
     if resume_from_checkpoint and resume_from_checkpoint.strip():
         resume_info = f"\n- 从检查点恢复: {resume_from_checkpoint}"
     
+    tokenizer_info = qwen_tokenizer_path.strip() if qwen_tokenizer_path and qwen_tokenizer_path.strip() else "Qwen/Qwen3-0.6B (自动下载)"
+    
     initial_msg = f"""使用 accelerate launch 启动 Anima T2I 训练!
 
 配置信息:
 - DiT 模型: {dit_path}
 - VAE 模型: {vae_path}
 - 文本编码器: {text_encoder_path}
+- Tokenizer: {tokenizer_info}
 - 图片文件夹: {image_folder}
 - 输出目录: {output_dir}
 - 训练步数: {num_train_steps}
@@ -203,8 +202,8 @@ def create_page():
                 
                 with gr.Row():
                     qwen_tokenizer_path = gr.Textbox(
-                        label="Qwen Tokenizer 路径",
-                        placeholder="选择 qwen tokenizer 目录",
+                        label="Qwen Tokenizer 路径 (可选)",
+                        placeholder="留空自动从网络加载 Qwen/Qwen3-0.6B",
                         container=False,
                         max_lines=1,
                         scale=4

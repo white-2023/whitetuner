@@ -248,16 +248,34 @@ def load_qwen3_text_encoder(
 
 
 class AnimaTokenizer:
+    DEFAULT_TOKENIZER = "Qwen/Qwen3-0.6B"
+    
     def __init__(self, qwen_tokenizer_path: str = None):
         from transformers import AutoTokenizer
         
         if qwen_tokenizer_path is None:
-            qwen_tokenizer_path = "Qwen/Qwen2.5-0.5B"
+            qwen_tokenizer_path = self.DEFAULT_TOKENIZER
         
-        self.qwen_tokenizer = AutoTokenizer.from_pretrained(
-            qwen_tokenizer_path,
-            trust_remote_code=True,
-        )
+        print(f"Loading tokenizer from: {qwen_tokenizer_path}")
+        
+        try:
+            self.qwen_tokenizer = AutoTokenizer.from_pretrained(
+                qwen_tokenizer_path,
+                trust_remote_code=True,
+            )
+        except Exception as e:
+            print(f"Failed to load from HuggingFace, trying ModelScope: {e}")
+            try:
+                from modelscope import AutoTokenizer as MSAutoTokenizer
+                self.qwen_tokenizer = MSAutoTokenizer.from_pretrained(
+                    qwen_tokenizer_path,
+                    trust_remote_code=True,
+                )
+            except ImportError:
+                raise RuntimeError(
+                    f"Failed to load tokenizer from {qwen_tokenizer_path}. "
+                    f"Install modelscope (pip install modelscope) or check your network connection."
+                )
         
         self.pad_token_id = 151643
 
