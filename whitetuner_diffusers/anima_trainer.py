@@ -820,7 +820,13 @@ class AnimaTrainer(BaseTrainer):
         if self.config.train_text_encoder and self.text_encoder is not None:
             unwrapped_te = self.accelerator.unwrap_model(self.text_encoder)
             te_state_dict = unwrapped_te.state_dict()
-            te_state_dict_cpu = {k: v.cpu() for k, v in te_state_dict.items()}
+            te_state_dict_cpu = {}
+            for k, v in te_state_dict.items():
+                if not k.startswith('model.'):
+                    new_key = 'model.' + k
+                else:
+                    new_key = k
+                te_state_dict_cpu[new_key] = v.cpu()
             save_file(te_state_dict_cpu, os.path.join(checkpoint_dir, "text_encoder_weights.safetensors"))
         
         self.save_accelerate_state(checkpoint_dir, step)
