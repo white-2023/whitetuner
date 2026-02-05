@@ -11,7 +11,7 @@ from PIL import Image
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "whitetuner_diffusers"))
 
 base_model_path = r"F:\models\circlestone-labs-Anima"
-trained_checkpoint_path = r"C:\Users\hhy\Downloads\moyuking(国风仙子）\out\checkpoints\checkpoint-1000"
+trained_checkpoint_path = r""
 
 prompt = "masterpiece, best quality, score_7, safe. An anime girl wearing a black tank-top and denim shorts is standing outdoors. She's holding a rectangular sign out in front of her that reads \"ANIMA\". She's looking at the viewer with a smile. The background features some trees and blue sky with clouds."
 negative_prompt = ""
