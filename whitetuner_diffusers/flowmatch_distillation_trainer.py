@@ -182,8 +182,8 @@ class FlowMatchDistillationTrainer(BaseTrainer):
         
         self.teacher_transformer = None
     
-    def _check_stop(self) -> bool:
-        return self.should_stop
+    def _check_stop(self, stage: str = None) -> bool:
+        return self.check_stop(stage)
     
     def create_dataset(self):
         if self.accelerator.is_main_process:
@@ -968,7 +968,7 @@ class FlowMatchDistillationTrainer(BaseTrainer):
     
     def save_checkpoint(self, step: int):
         output_dir = self.config.output_dir or os.path.join(self.script_dir, "output")
-        checkpoint_dir = os.path.join(output_dir, "checkpoints", f"checkpoint-{step}")
+        checkpoint_dir = os.path.join(output_dir, f"checkpoint-{step}")
         os.makedirs(checkpoint_dir, exist_ok=True)
         
         unwrapped_transformer = self.accelerator.unwrap_model(self.transformer)
@@ -1182,8 +1182,7 @@ class FlowMatchDistillationTrainer(BaseTrainer):
         
         self.save_checkpoint(actual_steps)
         
-        checkpoint_dir = os.path.join(output_dir, "checkpoints")
-        print(f"✓ 最终检查点已保存到: {checkpoint_dir}/checkpoint-{actual_steps}/")
+        print(f"✓ 最终检查点已保存到: {output_dir}/checkpoint-{actual_steps}/")
         
         if self.should_stop:
             print(f"\n训练在第 {actual_steps} 步停止")

@@ -398,8 +398,8 @@ class QwenEditTrainer(BaseTrainer):
         if self.accelerator.is_main_process:
             print(f"✓ Text Encoder、Tokenizer 和 Processor 加载完成")
     
-    def _check_stop(self) -> bool:
-        return self.should_stop
+    def _check_stop(self, stage: str = None) -> bool:
+        return self.check_stop(stage)
     
     def _cache_conditioning_embeddings(self):
         """缓存条件图的 Visual Embeddings (多卡分布式)"""
@@ -1091,7 +1091,7 @@ class QwenEditTrainer(BaseTrainer):
     
     def save_checkpoint(self, step: int):
         output_dir = self.config.output_dir or os.path.join(self.script_dir, "output")
-        checkpoint_dir = os.path.join(output_dir, "checkpoints", f"checkpoint-{step}")
+        checkpoint_dir = os.path.join(output_dir, f"checkpoint-{step}")
         os.makedirs(checkpoint_dir, exist_ok=True)
         
         unwrapped_transformer = self.accelerator.unwrap_model(self.transformer)
@@ -1236,11 +1236,9 @@ class QwenEditTrainer(BaseTrainer):
             
             self.save_checkpoint(actual_steps)
             
-            checkpoint_dir = os.path.join(output_dir, "checkpoints")
-            
             print(f"\n✓ 最终模型已保存到: {transformer_dir}/")
             print(f"  - {config_filename}")
-            print(f"✓ 最终检查点已保存到: {checkpoint_dir}/checkpoint-{actual_steps}/")
+            print(f"✓ 最终检查点已保存到: {output_dir}/checkpoint-{actual_steps}/")
             
             if self.should_stop:
                 print(f"\n⏹️ 训练在第 {actual_steps} 步停止")
@@ -1308,8 +1306,6 @@ class QwenEditTrainer(BaseTrainer):
                 json.dump(lokr_config, f, indent=2)
             
             self.save_checkpoint(actual_steps)
-            
-            checkpoint_dir = os.path.join(output_dir, "checkpoints")
             
             print(f"\n✓ 最终模型已保存到: {output_dir}/")
             print(f"  - {model_filename}")

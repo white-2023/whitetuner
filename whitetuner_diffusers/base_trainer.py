@@ -229,6 +229,19 @@ def check_stop_signal_file() -> bool:
     return os.path.exists(STOP_SIGNAL_FILE)
 
 
+def clear_stop_signal():
+    if os.path.exists(STOP_SIGNAL_FILE):
+        try:
+            os.remove(STOP_SIGNAL_FILE)
+        except:
+            pass
+    if os.path.exists(STOP_COMPLETE_FILE):
+        try:
+            os.remove(STOP_COMPLETE_FILE)
+        except:
+            pass
+
+
 def notify_stop_complete():
     try:
         with open(STOP_COMPLETE_FILE, 'w') as f:
@@ -497,6 +510,7 @@ class BaseTrainer(ABC):
         self.current_step = 0
         self.resume_step = 0
         self.tensorboard_writer = None
+        self._stop_stage = None
         
         self.effective_batch_size = None
         self.adjusted_num_train_steps = None
@@ -522,9 +536,20 @@ class BaseTrainer(ABC):
         gc.collect()
     
     def print_status(self, message: str):
-        """只在主进程打印状态消息"""
         if self.accelerator.is_main_process:
             print(message)
+    
+    def check_stop(self, stage: str = None) -> bool:
+        if self.should_stop:
+            return True
+        if check_stop_signal_file():
+            self.should_stop = True
+            self._stop_stage = stage
+            if self.accelerator.is_main_process:
+                stage_msg = f" (阶段: {stage})" if stage else ""
+                print(f"\n[stop] 收到停止信号{stage_msg}")
+            return True
+        return False
     
     # ============================================================
     # 抽象方法 - 子类必须实现
@@ -726,15 +751,13 @@ class BaseTrainer(ABC):
             print(f"✓ TensorBoard 日志目录: {tensorboard_dir}")
     
     def cleanup_old_checkpoints(self):
-        """清理旧检查点"""
         output_dir = self.config.output_dir or os.path.join(self.script_dir, "output")
-        checkpoints_dir = os.path.join(output_dir, "checkpoints")
         
-        if not os.path.exists(checkpoints_dir):
+        if not os.path.exists(output_dir):
             return
         
         checkpoints = []
-        for d in os.listdir(checkpoints_dir):
+        for d in os.listdir(output_dir):
             if d.startswith("checkpoint-"):
                 try:
                     step = int(d.split("-")[1])
@@ -742,21 +765,20 @@ class BaseTrainer(ABC):
                 except:
                     continue
         
+        if len(checkpoints) == 0:
+            return
+        
         checkpoints.sort()
         if len(checkpoints) > self.config.checkpoints_total_limit:
             num_to_remove = len(checkpoints) - self.config.checkpoints_total_limit
             for i in range(num_to_remove):
                 step, dirname = checkpoints[i]
-                checkpoint_path = os.path.join(checkpoints_dir, dirname)
+                checkpoint_path = os.path.join(output_dir, dirname)
                 shutil.rmtree(checkpoint_path, ignore_errors=True)
+                if self.accelerator.is_main_process:
+                    print(f"  - 已删除旧检查点: {dirname}")
     
     def train(self):
-        """核心训练循环"""
-        if self.accelerator.is_main_process:
-            if os.path.exists(STOP_SIGNAL_FILE):
-                os.remove(STOP_SIGNAL_FILE)
-            if os.path.exists(STOP_COMPLETE_FILE):
-                os.remove(STOP_COMPLETE_FILE)
         self.accelerator.wait_for_everyone()
         
         num_train_steps = self.adjusted_num_train_steps
@@ -833,7 +855,7 @@ class BaseTrainer(ABC):
         
         for epoch in range(1000):
             for batch in self.dataloader:
-                if self.should_stop or check_stop_signal_file():
+                if self.check_stop("训练"):
                     self.should_stop = True
                     self.current_step = global_step
                     if self.accelerator.is_main_process:
@@ -988,29 +1010,42 @@ class BaseTrainer(ABC):
     def run(self):
         try:
             if self.accelerator.is_main_process:
+                clear_stop_signal()
                 print("=" * 60)
                 print(f"开始训练 (使用 {self.accelerator.num_processes} 个 GPU)")
                 print("=" * 60)
+            self.accelerator.wait_for_everyone()
             
-            # 子类实现的方法 - 注意顺序：先创建数据集，再加载模型
+            if self.check_stop("初始化"):
+                return self._early_stop_cleanup()
+            
             self.create_dataset()
+            
+            if self.check_stop("创建数据集"):
+                return self._early_stop_cleanup()
+            
             self.load_models()
             
-            # 基类方法
+            if self.check_stop("加载模型"):
+                return self._early_stop_cleanup()
+            
             self.setup_training()
             
-            # 等待同步
+            if self.check_stop("设置训练"):
+                return self._early_stop_cleanup()
+            
             self.accelerator.wait_for_everyone()
             
             self.train()
             
-            try:
-                self.save_final_model()
-            except Exception as e:
-                if self.accelerator.is_main_process:
-                    print(f"\n[!] 保存模型时出错: {e}")
-                    import traceback
-                    traceback.print_exc()
+            if not self.should_stop:
+                try:
+                    self.save_final_model()
+                except Exception as e:
+                    if self.accelerator.is_main_process:
+                        print(f"\n[!] 保存模型时出错: {e}")
+                        import traceback
+                        traceback.print_exc()
             
             self.accelerator.wait_for_everyone()
             
@@ -1025,4 +1060,11 @@ class BaseTrainer(ABC):
                 notify_stop_complete()
             if dist.is_initialized():
                 dist.destroy_process_group()
+    
+    def _early_stop_cleanup(self):
+        if self.accelerator.is_main_process:
+            stage = self._stop_stage or "未知阶段"
+            print(f"\n[stop] 训练在 '{stage}' 阶段被停止")
+            notify_stop_complete()
+        self.accelerator.wait_for_everyone()
 

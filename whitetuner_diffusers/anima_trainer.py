@@ -258,8 +258,8 @@ class AnimaTrainer(BaseTrainer):
         self.vae = None
         self.dit = None
     
-    def _check_stop(self) -> bool:
-        return self.should_stop
+    def _check_stop(self, stage: str = None) -> bool:
+        return self.check_stop(stage)
     
     def create_dataset(self):
         if self.accelerator.is_main_process:
@@ -808,7 +808,7 @@ class AnimaTrainer(BaseTrainer):
     
     def save_checkpoint(self, step: int):
         output_dir = self.config.output_dir or os.path.join(self.script_dir, "anima_output")
-        checkpoint_dir = os.path.join(output_dir, "checkpoints", f"checkpoint-{step}")
+        checkpoint_dir = os.path.join(output_dir, f"checkpoint-{step}")
         os.makedirs(checkpoint_dir, exist_ok=True)
         
         unwrapped_model = self.accelerator.unwrap_model(self.dit)
@@ -943,8 +943,6 @@ class AnimaTrainer(BaseTrainer):
             json.dump(train_config, f, indent=2)
         
         self.save_checkpoint(actual_steps)
-        
-        checkpoint_dir = os.path.join(output_dir, "checkpoints")
         
         print(f"\nFinal model saved to: {output_dir}/")
         print(f"  - {model_filename}")

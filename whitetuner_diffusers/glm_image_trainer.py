@@ -430,8 +430,8 @@ class GlmImageTrainer(BaseTrainer):
         self.vlm = None
         self.vlm_processor = None
     
-    def _check_stop(self) -> bool:
-        return self.should_stop
+    def _check_stop(self, stage: str = None) -> bool:
+        return self.check_stop(stage)
     
     def cleanup_offloader(self):
         if hasattr(self, 'offloader') and self.offloader is not None:
@@ -1671,7 +1671,7 @@ class GlmImageTrainer(BaseTrainer):
     
     def save_checkpoint(self, step: int):
         output_dir = self.config.output_dir or os.path.join(self.script_dir, "output")
-        checkpoint_dir = os.path.join(output_dir, "checkpoints", f"checkpoint-{step}")
+        checkpoint_dir = os.path.join(output_dir, f"checkpoint-{step}")
         os.makedirs(checkpoint_dir, exist_ok=True)
         
         if self.accelerator.is_main_process:
@@ -1784,8 +1784,7 @@ class GlmImageTrainer(BaseTrainer):
         
         self.save_checkpoint(actual_steps)
         
-        checkpoint_dir = os.path.join(output_dir, "checkpoints")
-        print(f"[OK] 最终检查点已保存到: {checkpoint_dir}/checkpoint-{actual_steps}/")
+        print(f"[OK] 最终检查点已保存到: {output_dir}/checkpoint-{actual_steps}/")
         
         if self.should_stop:
             print(f"\n训练在第 {actual_steps} 步停止")

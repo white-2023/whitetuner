@@ -409,8 +409,8 @@ class WanTrainer(BaseTrainer):
         self.current_model_is_high_noise = False
         self.next_model_is_high_noise = False
     
-    def _check_stop(self) -> bool:
-        return self.should_stop
+    def _check_stop(self, stage: str = None) -> bool:
+        return self.check_stop(stage)
     
     def create_dataset(self):
         if self.accelerator.is_main_process:
@@ -1002,7 +1002,7 @@ class WanTrainer(BaseTrainer):
     
     def save_checkpoint(self, step: int):
         output_dir = self.config.output_dir or os.path.join(self.script_dir, "wan_output")
-        checkpoint_dir = os.path.join(output_dir, "checkpoints", f"checkpoint-{step}")
+        checkpoint_dir = os.path.join(output_dir, f"checkpoint-{step}")
         os.makedirs(checkpoint_dir, exist_ok=True)
         
         lokr_state_dict = {}
@@ -1179,8 +1179,6 @@ class WanTrainer(BaseTrainer):
             json.dump(lokr_config, f, indent=2)
         
         self.save_checkpoint(actual_steps)
-        
-        checkpoint_dir = os.path.join(output_dir, "checkpoints")
         
         print(f"\nFinal LoKr model saved to: {output_dir}/")
         print(f"  - {model_filename}")

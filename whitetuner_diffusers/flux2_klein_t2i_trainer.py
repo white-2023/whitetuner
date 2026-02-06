@@ -454,8 +454,8 @@ class Flux2KleinT2ITrainer(BaseTrainer):
         
         self.use_fused_backward = False
     
-    def _check_stop(self) -> bool:
-        return self.should_stop
+    def _check_stop(self, stage: str = None) -> bool:
+        return self.check_stop(stage)
     
     def load_models(self):
         self._load_text_encoder()
